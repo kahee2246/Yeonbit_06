@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Bot 설정</title>
+
+    <!-- Tailwind CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="container mx-auto p-6">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold">⚙️ 봇 설정</h1>
+            <a href="/" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded">← 대시보드로</a>
+        </div>
+        
+        <div class="bg-gray-800 p-6 rounded-lg">
+            <form method="POST" action="/config">
+                <div class="space-y-4">
+                    <!-- 채널 ID -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2">채널 ID</label>
+                        <input type="text" name="channel_id" value="{{ config.channel_id }}" 
+                               class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
+                               required>
+                    </div>
+                    
+                    <!-- 전송 간격 -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2">전송 간격 (초)</label>
+                        <input type="number" name="send_interval" value="{{ config.send_interval }}" 
+                               class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
+                               min="60" required>
+                        <p class="text-sm text-gray-400 mt-1">현재: {{ (config.send_interval / 60) | int }}분</p>
+                    </div>
+                    
+                    <!-- 메시지 설정 -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2">메시지 내용</label>
+                        <textarea name="message_content" rows="6" 
+                                  class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
+                                  required>{{ config.message_content }}</textarea>
+                    </div>
+                    
+                    <!-- 활성화 여부 -->
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="is_enabled" value="true" 
+                                   {% if config.is_enabled %}checked{% endif %}
+                                   class="mr-2">
+                            <span>자동 전송 활성화</span>
+                        </label>
+                    </div>
+                    
+                    <!-- 이미지 전송 여부 -->
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="send_with_image" value="true" 
+                                   {% if config.send_with_image %}checked{% endif %}
+                                   class="mr-2">
+                            <span>이미지와 함께 전송</span>
+                        </label>
+                    </div>
+                    
+                    <!-- 저장 버튼 -->
+                    <div class="pt-4">
+                        <button type="submit" 
+                                class="w-full bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded font-semibold">
+                            💾 설정 저장
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        
+        <!-- 이미지 업로드 섹션 -->
+        <div class="bg-gray-800 p-6 rounded-lg mt-6">
+            <h3 class="text-xl font-semibold mb-4">🖼️ 이미지 관리</h3>
+            
+            <!-- 현재 이미지 표시 -->
+            <div class="mb-4">
+                {% if config.image_path %}
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <p class="text-sm text-gray-400 mb-2">현재 이미지:</p>
+                    {% set filename = config.image_path.replace('\\', '/').split('/')[-1] %}
+                    <img src="/api/images/{{ filename }}" 
+                         alt="현재 봇 이미지" 
+                         class="max-w-md max-h-64 rounded mb-2"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                    <div style="display: none;" class="text-red-400">이미지 로드 실패</div>
+                    <p class="text-xs text-gray-500">{{ filename }}</p>
+                    <button onclick="deleteImage()" 
+                            class="mt-2 bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm">
+                        🗑️ 이미지 삭제
+                    </button>
+                </div>
+                {% else %}
+                <div class="bg-gray-700 p-4 rounded-lg text-center text-gray-400">
+                    <p>📭 업로드된 이미지가 없습니다</p>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- 이미지 업로드 폼 -->
+            <div class="bg-gray-700 p-4 rounded-lg">
+                <p class="text-sm text-gray-400 mb-3">
+                    ℹ️ 새 이미지를 업로드하면 기존 이미지가 자동으로 교체됩니다
+                </p>
+                <form id="upload-form" enctype="multipart/form-data">
+                    <div class="flex items-center space-x-2">
+                        <input type="file" 
+                               id="image-file" 
+                               name="file" 
+                               accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                               class="flex-1 bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white text-sm"
+                               required>
+                        <button type="submit" 
+                                class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded font-semibold whitespace-nowrap">
+                            📤 업로드
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">
+                        지원 형식: JPG, PNG, GIF, WEBP
+                    </p>
+                </form>
+                <div id="upload-status" class="mt-2"></div>
+            </div>
+        </div>
+        
+        <div class="mt-6 text-center text-gray-400">
+            <p class="text-sm">설정 파일 위치: config/config.json</p>
+        </div>
+    </div>
+    
+    <script>
+        // 이미지 업로드
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const fileInput = document.getElementById('image-file');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('파일을 선택해주세요');
+                return;
+            }
+            
+            // 파일 크기 체크 (10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                alert('파일 크기가 10MB를 초과합니다');
+                return;
+            }
+            
+            formData.append('file', file);
+            
+            const statusDiv = document.getElementById('upload-status');
+            statusDiv.innerHTML = '<p class="text-blue-400">⏳ 업로드 중...</p>';
+            
+            try {
+                const response = await fetch('/api/images/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    statusDiv.innerHTML = '<p class="text-green-400">✅ ' + result.message + '</p>';
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1000);
+                } else {
+                    statusDiv.innerHTML = '<p class="text-red-400">❌ ' + result.message + '</p>';
+                }
+            } catch (err) {
+                statusDiv.innerHTML = '<p class="text-red-400">❌ 업로드 실패: ' + err.message + '</p>';
+            }
+        });
+        
+        // 이미지 삭제
+        async function deleteImage() {
+            if (!confirm('정말 이미지를 삭제하시겠습니까?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/images/delete', {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(result.message);
+                    location.reload();
+                } else {
+                    alert('삭제 실패: ' + result.message);
+                }
+            } catch (err) {
+                alert('삭제 실패: ' + err.message);
+            }
+        }
+    </script>
+</body>
+</html>

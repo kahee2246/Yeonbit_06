@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Bot 대시보드</title>
+
+    <!-- Tailwind CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <!-- Axios -->
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="container mx-auto p-6">
+        <h1 class="text-3xl font-bold mb-8 text-center">🤖 Discord Auto Bot</h1>
+        
+        <!-- 상태 카드 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h3 class="text-lg font-semibold mb-2">봇 상태</h3>
+                <p class="text-2xl" id="bot-status">
+                    {% if is_running %}
+                        🟢 실행 중
+                    {% else %}
+                        🔴 중지됨
+                    {% endif %}
+                </p>
+            </div>
+            
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h3 class="text-lg font-semibold mb-2">자동 전송</h3>
+                <p class="text-2xl" id="auto-status">
+                    {% if is_enabled %}
+                        ✅ 활성화
+                    {% else %}
+                        ❌ 비활성화
+                    {% endif %}
+                </p>
+            </div>
+            
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h3 class="text-lg font-semibold mb-2">다음 전송</h3>
+                <p class="text-xl" id="next-send">
+                    {% if next_send_time %}
+                        {{ next_send_time.strftime('%H:%M:%S') }}
+                    {% else %}
+                        없음
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+        
+        <!-- 제어 버튼 -->
+        <div class="flex flex-wrap gap-4 mb-8 justify-center">
+            <button onclick="controlBot('start')" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg">
+                🚀 봇 시작
+            </button>
+            <button onclick="controlBot('stop')" class="bg-red-600 hover:bg-red-700 px-6 py-3 rounded-lg">
+                ⏹️ 봇 중지
+            </button>
+            <button onclick="controlBot('send_now')" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg">
+                📨 즉시 전송
+            </button>
+            <a href="/config" class="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg inline-block">
+                ⚙️ 설정
+            </a>
+        </div>
+        
+        <!-- 현재 설정 -->
+        <div class="bg-gray-800 p-6 rounded-lg mb-8">
+            <h3 class="text-xl font-semibold mb-4">현재 설정</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <p class="text-gray-400">채널 ID:</p>
+                    <p class="font-mono">{{ config.channel_id }}</p>
+                </div>
+                <div>
+                    <p class="text-gray-400">전송 간격:</p>
+                    <p>{{ config.send_interval }}초 ({{ config.send_interval // 60 }}분)</p>
+                </div>
+                <div>
+                    <p class="text-gray-400">이미지 설정:</p>
+                    <p>
+                        {% if config.send_with_image %}
+                            {% if config.image_path %}
+                                🖼️ 이미지와 함께 전송
+                            {% else %}
+                                ⚠️ 이미지 없음 (설정 필요)
+                            {% endif %}
+                        {% else %}
+                            📝 텍스트만 전송
+                        {% endif %}
+                    </p>
+                </div>
+                <div>
+                    <p class="text-gray-400">메시지 길이:</p>
+                    <p>{{ config.message_content|length }}자</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 메시지 미리보기 -->
+        <div class="bg-gray-800 p-6 rounded-lg">
+            <h3 class="text-xl font-semibold mb-4">📱 현재 메시지 미리보기</h3>
+            <div class="bg-gray-700 p-4 rounded-lg">
+                <div class="flex items-start space-x-3">
+                    <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                        🤖
+                    </div>
+                    <div class="flex-1">
+                        <div class="font-semibold mb-1">Discord Bot</div>
+                        <div class="whitespace-pre-wrap text-sm">{{ config.message_content }}</div>
+                        {% if config.send_with_image and config.image_path %}
+                        <div class="mt-2">
+                            <div class="text-sm text-gray-400 mb-1">📷 첨부된 이미지:</div>
+                            {% set filename = config.image_path.replace('\\', '/').split('/')[-1] %}
+                            <img src="/api/images/{{ filename }}" 
+                                 alt="봇 이미지" class="max-w-xs max-h-48 rounded"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                            <div class="text-sm text-gray-400" style="display: none;">
+                                이미지 로드 실패
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 봇 제어 API 호출
+        async function controlBot(action) {
+            try {
+                // 버튼 비활성화
+                const buttons = document.querySelectorAll('button');
+                buttons.forEach(btn => btn.disabled = true);
+                
+                // 즉시 UI 업데이트 (낙관적 업데이트)
+                if (action === 'start') {
+                    updateBotStatus('🟡 시작 중...', 'text-yellow-400');
+                } else if (action === 'stop') {
+                    updateBotStatus('🟡 중지 중...', 'text-yellow-400');
+                } else if (action === 'send_now') {
+                    updateBotStatus('📤 전송 중...', 'text-blue-400');
+                }
+                
+                const res = await axios.post(`/api/bot/${action}`);
+                
+                // 성공 시 즉시 상태 업데이트 및 적응형 간격 재설정
+                if (res.data.success) {
+                    setTimeout(() => {
+                        updateStatus(false).then(() => {
+                            setAdaptiveUpdateInterval();
+                        });
+                    }, 1000);
+                }
+                
+                alert(res.data.message);
+                
+            } catch (err) {
+                alert('오류가 발생했습니다: ' + err.message);
+                // 오류 시에도 상태 업데이트
+                setTimeout(() => updateStatus(false), 1000);
+            } finally {
+                // 버튼 다시 활성화
+                const buttons = document.querySelectorAll('button');
+                buttons.forEach(btn => btn.disabled = false);
+            }
+        }
+        
+        // 봇 상태 UI 업데이트 헬퍼 함수
+        function updateBotStatus(text, className) {
+            const botEl = document.getElementById('bot-status');
+            botEl.textContent = text;
+            botEl.className = `text-2xl ${className}`;
+        }
+
+        // 전역 변수로 상태 관리
+        let nextSendTime = null;
+        let localTimeOffset = 0;
+        let isUpdating = false;
+        let statusUpdateInterval = null;
+        let countdownInterval = null;
+
+        // 실시간 카운트다운 업데이트 (로컬에서만 계산)
+        function updateCountdown() {
+            const nextEl = document.getElementById('next-send');
+            
+            if (nextSendTime) {
+                const now = new Date(Date.now() + localTimeOffset);
+                const next = new Date(nextSendTime);
+                const diff = Math.max(0, Math.floor((next - now) / 1000));
+                
+                if (diff > 0) {
+                    const hours = Math.floor(diff / 3600);
+                    const minutes = Math.floor((diff % 3600) / 60);
+                    const seconds = diff % 60;
+                    
+                    if (hours > 0) {
+                        nextEl.textContent = `${hours}시간 ${minutes}분 ${seconds}초 후`;
+                    } else {
+                        nextEl.textContent = `${minutes}분 ${seconds}초 후`;
+                    }
+                    nextEl.className = 'text-xl text-blue-400';
+                } else {
+                    nextEl.textContent = '곧 전송';
+                    nextEl.className = 'text-xl text-green-400';
+                    // 전송 시간이 지나면 30초 후 상태 업데이트
+                    setTimeout(() => updateStatus(false), 30000);
+                }
+            } else {
+                nextEl.textContent = '없음';
+                nextEl.className = 'text-xl text-gray-400';
+            }
+        }
+
+        // 상태 업데이트 함수 (API 호출 최소화)
+        async function updateStatus(showLoading = true) {
+            if (isUpdating) return; // 중복 호출 방지
+            
+            try {
+                isUpdating = true;
+                
+                if (showLoading) {
+                    updateBotStatus('🔄 확인 중...', 'text-blue-400');
+                }
+
+                const { data: status } = await axios.get('/api/status');
+                const botEl = document.getElementById('bot-status');
+                const autoEl = document.getElementById('auto-status');
+
+                // 봇 상태 업데이트
+                if (status.is_connected && status.is_running) {
+                    updateBotStatus('🟢 실행 중', 'text-green-400');
+                } else if (status.is_connected) {
+                    updateBotStatus('🟡 연결됨', 'text-yellow-400');
+                } else {
+                    updateBotStatus('🔴 중지됨', 'text-red-400');
+                }
+
+                // 자동 전송 상태
+                autoEl.textContent = status.is_enabled ? '✅ 활성화' : '❌ 비활성화';
+                autoEl.className = status.is_enabled ? 'text-2xl text-green-400' : 'text-2xl text-red-400';
+
+                // 다음 전송 시간 계산 및 저장
+                if (status.next_send_time && status.is_running && status.is_enabled) {
+                    nextSendTime = status.next_send_time;
+                    const currentServerTime = status.current_time;
+                    localTimeOffset = new Date(currentServerTime) - new Date();
+                    
+                    // 카운트다운 시작
+                    if (!countdownInterval) {
+                        countdownInterval = setInterval(updateCountdown, 1000);
+                    }
+                } else {
+                    nextSendTime = null;
+                    // 카운트다운 중지
+                    if (countdownInterval) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                    }
+                }
+                
+                updateCountdown();
+                
+            } catch (err) {
+                console.error('상태 업데이트 오류:', err);
+                updateBotStatus('❌ 연결 실패', 'text-red-400');
+            } finally {
+                isUpdating = false;
+            }
+        }
+
+        // 적응형 업데이트 간격 설정
+        function setAdaptiveUpdateInterval() {
+            // 기존 인터벌 클리어
+            if (statusUpdateInterval) {
+                clearInterval(statusUpdateInterval);
+            }
+            
+            // 봇이 실행 중이면 30초마다, 아니면 60초마다 업데이트
+            const isRunning = document.getElementById('bot-status').textContent.includes('실행 중');
+            const interval = isRunning ? 30000 : 60000; // 30초 또는 60초
+            
+            statusUpdateInterval = setInterval(() => updateStatus(false), interval);
+        }
+
+        // 페이지 활성화 상태 감지
+        function handleVisibilityChange() {
+            if (document.hidden) {
+                // 페이지가 백그라운드로 가면 업데이트 중지
+                if (statusUpdateInterval) {
+                    clearInterval(statusUpdateInterval);
+                    statusUpdateInterval = null;
+                }
+                if (countdownInterval) {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                }
+            } else {
+                // 페이지가 다시 활성화되면 즉시 상태 업데이트 후 인터벌 재시작
+                updateStatus(false).then(() => {
+                    setAdaptiveUpdateInterval();
+                    if (nextSendTime && !countdownInterval) {
+                        countdownInterval = setInterval(updateCountdown, 1000);
+                    }
+                });
+            }
+        }
+
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            // 초기 상태 업데이트
+            updateStatus(true);
+            
+            // 적응형 업데이트 간격 설정
+            setTimeout(setAdaptiveUpdateInterval, 2000);
+            
+            // 페이지 가시성 변화 감지
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+            
+            // 페이지 언로드 시 인터벌 정리
+            window.addEventListener('beforeunload', function() {
+                if (statusUpdateInterval) clearInterval(statusUpdateInterval);
+                if (countdownInterval) clearInterval(countdownInterval);
+            });
+        });
+    </script>
+</body>
+</html>
